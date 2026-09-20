@@ -1,12 +1,15 @@
 import { z } from 'zod';
-import { TeamDataWithMembers, User } from '@/lib/db/schema';
-import { getTeamForUser, getUser } from '@/lib/db/queries';
+import { User } from '@/lib/db/schema';
+import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
+import { db } from '@/lib/db/drizzle';
+import { eq } from 'drizzle-orm';
+import { users } from '@/lib/db/schema';
 
 export type ActionState = {
   error?: string;
   success?: string;
-  [key: string]: any; // This allows for additional properties
+  [key: string]: any;
 };
 
 type ValidatedActionFunction<S extends z.ZodType<any, any>, T> = (
@@ -39,9 +42,20 @@ export function validatedActionWithUser<S extends z.ZodType<any, any>, T>(
   action: ValidatedActionWithUserFunction<S, T>
 ) {
   return async (prevState: ActionState, formData: FormData) => {
-    const user = await getUser();
-    if (!user) {
+    const session = await auth();
+    if (!session?.user?.id) {
       throw new Error('User is not authenticated');
+    }
+
+    // Fetch full user from DB
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, session.user.id))
+      .limit(1);
+
+    if (!user) {
+      throw new Error('User not found');
     }
 
     const result = schema.safeParse(Object.fromEntries(formData));
@@ -50,26 +64,5 @@ export function validatedActionWithUser<S extends z.ZodType<any, any>, T>(
     }
 
     return action(result.data, formData, user);
-  };
-}
-
-type ActionWithTeamFunction<T> = (
-  formData: FormData,
-  team: TeamDataWithMembers
-) => Promise<T>;
-
-export function withTeam<T>(action: ActionWithTeamFunction<T>) {
-  return async (formData: FormData): Promise<T> => {
-    const user = await getUser();
-    if (!user) {
-      redirect('/sign-in');
-    }
-
-    const team = await getTeamForUser();
-    if (!team) {
-      throw new Error('Team not found');
-    }
-
-    return action(formData, team);
   };
 }

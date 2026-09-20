@@ -3,7 +3,13 @@ import postgres from 'postgres';
 import * as schema from './schema';
 import dotenv from 'dotenv';
 
-dotenv.config();
+if (!process.env.POSTGRES_URL) {
+  try {
+    dotenv.config();
+  } catch {
+    // Ignore in edge/restricted environments
+  }
+}
 
 if (!process.env.POSTGRES_URL) {
   throw new Error('POSTGRES_URL environment variable is not set');
